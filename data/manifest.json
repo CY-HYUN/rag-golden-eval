@@ -1,0 +1,19 @@
+{
+ "source": "https://oaipmh.arxiv.org/oai ListRecords metadataPrefix=arXiv set=cs from=2026-07-06 until=2026-07-10",
+ "filter": "primary category in ['cs.CL', 'cs.LG'], created >= 2026-07-01, license http://creativecommons.org/licenses/by/*",
+ "built": "2026-10-08",
+ "pymupdf": "1.28.2",
+ "seed": 20261008,
+ "max_words_per_paper": 10000,
+ "candidates": 293,
+ "sampled_tried": 151,
+ "kept": 150,
+ "dropped": [
+  {
+   "id": "2607.08581",
+   "why": "1400 words < 2000"
+  }
+ ],
+ "corpus_jsonl_sha256": "f720a8cc935781771d83ba86cf5e8afc82d6dea446331b6fa27f6a99c281c7d2",
+ "words": 1065786
+}
