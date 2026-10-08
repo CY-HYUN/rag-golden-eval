@@ -174,6 +174,7 @@ def measure() -> None:
     summary = {"golden_sha256": golden_hash, "commit": commit, "gen_model": GEN_MODEL, "judge_model": JUDGE_MODEL,
                "rubric": RUBRIC_VERSION, "top_k_gen": TOP_K_GEN, "runs": {}}
     answerable = [q for q in qs if q.type != "unanswerable"]
+    summary["n_answerable"] = len(answerable)
     for run in RUNS_PLAN:
         recs = {}
         for q in qs:
@@ -260,7 +261,7 @@ def report() -> None:
     r1 = {k: sum(runs[r][k] for r in ("R1a", "R1b", "R1c")) / 3 for k in noise}
     cols = ["recall@5", "recall@10", "mrr@10", "ndcg@10", "faithfulness", "correctness", "abstention_acc",
             "false_abstention", "GAA", "answered", "gen_failures", "judge_failures"]
-    print(f"golden {s['golden_sha256'][:12]} · N={runs['R0']['N']} · gen {s['gen_model']} · judge {s['judge_model']} "
+    print(f"golden {s['golden_sha256'][:12]} · N={runs['R0']['N']} (retrieval metrics over the {s['n_answerable']} answerable) · gen {s['gen_model']} · judge {s['judge_model']} "
           f"(judge not yet calibrated) · commit {s['commit']}")
     print("| run | " + " | ".join(cols) + " | GAA vs R1 mean |")
     print("|" + "---|" * (len(cols) + 2))
