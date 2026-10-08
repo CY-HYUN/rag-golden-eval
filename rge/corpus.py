@@ -104,12 +104,12 @@ def build() -> None:
         g.write(body)
     ids = [p["id"] for p in kept]
     dev = sorted(random.Random(SEED + 1).sample(ids, round(DEV_SHARE * len(ids))))
-    (DATA / "split.json").write_text(json.dumps({"seed": SEED + 1, "dev": dev, "eval": sorted(set(ids) - set(dev))}, indent=1))
+    (DATA / "split.json").write_text(json.dumps({"seed": SEED + 1, "dev": dev, "eval": sorted(set(ids) - set(dev))}, indent=1), newline="\n")
     (DATA / "manifest.json").write_text(json.dumps({
         "source": f"{OAI} ListRecords metadataPrefix=arXiv set=cs from={WINDOW[0]} until={WINDOW[1]}",
         "filter": f"primary category in {sorted(PRIMARY)}, created >= {CREATED_FROM}, license http://creativecommons.org/licenses/by/*",
         "built": time.strftime("%Y-%m-%d"), "pymupdf": pymupdf.VersionBind, "seed": SEED,
         "max_words_per_paper": MAX_WORDS, "candidates": len(cands), "sampled_tried": len(kept) + len(dropped), "kept": len(kept), "dropped": dropped,
-        "corpus_jsonl_sha256": sha256(raw), "words": sum(len(p["text"].split()) for p in kept)}, indent=1))
+        "corpus_jsonl_sha256": sha256(raw), "words": sum(len(p["text"].split()) for p in kept)}, indent=1), newline="\n")
     raw.unlink()  # the committed artifact is the gzip; its uncompressed content is what the hash covers
     print(f"kept {len(kept)}, dropped {len(dropped)}, candidates {len(cands)}")

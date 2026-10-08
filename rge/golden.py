@@ -180,7 +180,7 @@ def build(only_answerable: bool = False) -> None:
 
 
 def write(items: list[dict]) -> None:
-    (DATA / "golden_drafts.jsonl").write_text("".join(json.dumps(it, ensure_ascii=False) + "\n" for it in items), encoding="utf-8")
+    (DATA / "golden_drafts.jsonl").write_text("".join(json.dumps(it, ensure_ascii=False) + "\n" for it in items), encoding="utf-8", newline="\n")
     kept, n = [], 0
     for qtype, quota in KEEP.items():
         for it in [i for i in items if i["type"] == qtype and not i["drop"]][:quota]:
@@ -191,10 +191,10 @@ def write(items: list[dict]) -> None:
                                  evidence=[Evidence(**e) for e in it["evidence"]],
                                  source_papers=sorted({chunks_paper(c) for c in it["chunks"]}),
                                  machine_check=f"{how} (draft {it['draft']}, batches {', '.join(filter(None, it['check_batches']))})"))
-    GOLDEN.write_text("".join(q.model_dump_json() + "\n" for q in kept), encoding="utf-8")
+    GOLDEN.write_text("".join(q.model_dump_json() + "\n" for q in kept), encoding="utf-8", newline="\n")
     load_golden()  # the file must load under the strict schema before it is hashed
     h = sha256(GOLDEN)
-    (DATA / "golden_set_v1.sha256").write_text(f"{h}  golden_set_v1.jsonl\n")
+    (DATA / "golden_set_v1.sha256").write_text(f"{h}  golden_set_v1.jsonl\n", newline="\n")
     REVIEW.mkdir(exist_ok=True)
     with (REVIEW / "human_check.csv").open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)

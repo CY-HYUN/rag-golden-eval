@@ -150,7 +150,7 @@ def run_batch(reqs: dict[str, dict], tag: str, est_out: int, use_cache: bool) ->
         bid = c.messages.batches.create(requests=[{"custom_id": k, "params": v} for k, v in todo.items()]).id
         (RUNS / bid).mkdir(parents=True, exist_ok=True)
         (RUNS / bid / "meta.json").write_text(json.dumps({"batch": bid, "tag": tag, "reqs_hash": rhash, "n": len(todo),
-                                                          "created": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=1))
+                                                          "created": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=1), newline="\n")
     while (b := c.messages.batches.retrieve(bid)).processing_status != "ended":
         print(f"{tag} {bid}: {b.request_counts}", flush=True)
         time.sleep(30)
@@ -169,12 +169,12 @@ def run_batch(reqs: dict[str, dict], tag: str, est_out: int, use_cache: bool) ->
         text = "".join(x.text for x in m.content if x.type == "text")
         got[r.custom_id] = {"text": text, "stop": m.stop_reason, "ok": m.stop_reason == "end_turn"}
     (RUNS / bid / "results.jsonl").write_text("".join(json.dumps({"custom_id": k, **v}) + "\n" for k, v in got.items()),
-                                              encoding="utf-8")
-    (RUNS / bid / "usage.json").write_text(json.dumps(usage))
+                                              encoding="utf-8", newline="\n")
+    (RUNS / bid / "usage.json").write_text(json.dumps(usage), newline="\n")
     print(f"{tag} {bid}: done {usage}")
     if use_cache:
         LLM_CACHE.parent.mkdir(exist_ok=True)
-        with LLM_CACHE.open("a", encoding="utf-8") as f:
+        with LLM_CACHE.open("a", encoding="utf-8", newline="\n") as f:
             for k, v in got.items():
                 if v["ok"]:  # failures are not cached, so a re-run retries them
                     f.write(json.dumps({"key": key_of(todo[k]), **v, "batch": bid}) + "\n")

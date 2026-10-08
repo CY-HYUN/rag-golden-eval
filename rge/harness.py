@@ -141,7 +141,7 @@ def retrieve_all(qs: list[Question]) -> dict[str, dict[str, list[int]]]:
     if path.exists():
         return json.loads(path.read_text())
     out = {r: {q.id: f(q.question, 10) for q in qs} for r, f in RUNGS.items()}
-    path.write_text(json.dumps(out))
+    path.write_text(json.dumps(out), newline="\n")
     return out
 
 
@@ -193,14 +193,14 @@ def measure() -> None:
             rec["pass"] = score_question(q, rec)
             recs[q.id] = rec
         (RESULTS / f"{run}.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in recs.values()),
-                                              encoding="utf-8")
+                                              encoding="utf-8", newline="\n")
         m = generation_metrics(qs, recs)
         if run != "R0":
             m |= retrieval_metrics([ret[run[:2]][q.id] for q in answerable], [q.evidence for q in answerable])
         m["batches"] = sorted({gens[f"{run}__{q.id}"].get("batch", "") for q in qs} - {""})
         summary["runs"][run] = m
     summary["judge_batches"] = sorted({v.get("batch", "") for v in judged.values()} - {""})
-    (RESULTS / "summary.json").write_text(json.dumps(summary, indent=1))
+    (RESULTS / "summary.json").write_text(json.dumps(summary, indent=1), newline="\n")
     calibration_sheet(qs, ret)
     report()
 
