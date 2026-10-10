@@ -26,7 +26,7 @@ RERANK_MODEL, RERANK_REV = "cross-encoder/ms-marco-MiniLM-L6-v2", "233902d25c440
 
 # Message Batches API prices, USD per million tokens (input, output), read 2026-10-08 from
 # https://platform.claude.com/docs/en/about-claude/pricing (Batch processing table, 50% of list price).
-BATCH_PRICE = {"claude-sonnet-5-5": (1.0, 5.0), "claude-opus-5-5": (2.0, 10.0)}
+BATCH_PRICE = {"claude-sonnet-5-5": (1.0, 5.0), "claude-opus-5-5": (2.0, 10.0), "claude-haiku-4-5-20251001": (0.5, 2.5)}
 BUDGET_USD = float(os.environ.get("RGE_BUDGET_USD", "60"))
 
 CHUNK_WORDS, CHUNK_STRIDE = 250, 200  # fixed word windows, 50-word overlap
@@ -106,10 +106,9 @@ def client():
 
 
 def params(model: str, system: str, user: str, max_tokens: int, effort: str) -> dict:
-    p = {"model": model, "max_tokens": max_tokens, "system": system,
-         "messages": [{"role": "user", "content": user}], "output_config": {"effort": effort}}
-    if model == GEN_MODEL:
-        p["thinking"] = {"type": "between_tools"}  # Sonnet 5.5's way to answer without a thinking pass
+    p = {"model": model, "max_tokens": max_tokens, "system": system, "messages": [{"role": "user", "content": user}]}
+    if not model.startswith("claude-haiku-4-5"):
+        p["output_config"] = {"effort": effort}  # Haiku 4.5 rejects the effort parameter (400, checked 2026-10-10)
     return p
 
 

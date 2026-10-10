@@ -4,6 +4,8 @@
     golden      draft questions from the eval slice, check each against its own evidence, write golden_set_v1
     index       build the BM25 and dense (Qdrant local) indexes over every chunk
     measure     run the ladder (R0-R4, R1 three times) through generation and the judge
+    repeat      generate R3 and R4 once more (new batch) and judge them; rows R3-rep, R4-rep next to the originals
+    judge-sensitivity [model ...]  re-judge R1a-R4 with other judge models; results/judge_sensitivity.md
     report      print the results table from results/ (no API calls)
     calibrate   agreement and Cohen's kappa of the judge against review/judge_calibration.csv
     selftest    metric functions on hand-computed examples
@@ -25,6 +27,12 @@ def main() -> int:
     elif cmd == "measure":
         from .harness import measure
         measure()
+    elif cmd == "repeat":
+        from .harness import measure
+        measure(["R3", "R4"], "generate-v1-rep", "-rep")
+    elif cmd == "judge-sensitivity":
+        from .harness import JUDGE_ALT, judge_sensitivity
+        judge_sensitivity(sys.argv[2:] or JUDGE_ALT)
     elif cmd == "report":
         from .harness import report
         report()

@@ -46,15 +46,16 @@ def passages(ids: list[int]) -> str:
 
 
 def gen_request(question: str, ids: list[int]) -> dict:
-    return params(GEN_MODEL, GEN_SYSTEM, f"{passages(ids)}\n\nQuestion: {question}", 1024, "high")
+    # between_tools: Sonnet 5.5's way to answer without a thinking pass. Judges keep their default thinking.
+    return params(GEN_MODEL, GEN_SYSTEM, f"{passages(ids)}\n\nQuestion: {question}", 1024, "high") | {"thinking": {"type": "between_tools"}}
 
 
-def faith_request(question: str, ids: list[int], answer: str) -> dict:
-    return params(JUDGE_MODEL, FAITH_SYSTEM, f"{passages(ids)}\n\nQuestion: {question}\n\nAnswer: {answer}", 3000, "low")
+def faith_request(question: str, ids: list[int], answer: str, model: str = JUDGE_MODEL) -> dict:
+    return params(model, FAITH_SYSTEM, f"{passages(ids)}\n\nQuestion: {question}\n\nAnswer: {answer}", 3000, "low")
 
 
-def correct_request(question: str, gold: str, answer: str) -> dict:
-    return params(JUDGE_MODEL, CORRECT_SYSTEM,
+def correct_request(question: str, gold: str, answer: str, model: str = JUDGE_MODEL) -> dict:
+    return params(model, CORRECT_SYSTEM,
                   f"Question: {question}\n\nReference answer: {gold}\n\nCandidate answer: {answer}", 3000, "low")
 
 
@@ -145,7 +146,7 @@ def retrieve_all(qs: list[Question]) -> dict[str, dict[str, list[int]]]:
     return out
 
 
-def judge_all(qs, runs, gens, ret):
+def judge_all(qs, runs, gens, ret, model: str = JUDGE_MODEL):
     """Faithfulness (passages shown) and correctness (gold shown) for every answered question. R0 shows no
     passages, so an R0 answer has nothing to be faithful to and is unfaithful by definition, without a call."""
     reqs = {}
@@ -156,54 +157,140 @@ def judge_all(qs, runs, gens, ret):
                 continue
             ids = ret[run[:2]][q.id][:TOP_K_GEN] if run != "R0" else []
             if ids:
-                reqs[f"{run}__{q.id}__f"] = faith_request(q.question, ids, g["text"])
-            reqs[f"{run}__{q.id}__c"] = correct_request(q.question, q.gold_answer, g["text"])
-    return run_batch(reqs, f"judge-{RUBRIC_VERSION}", est_out=600, use_cache=True)
+                reqs[f"{run}__{q.id}__f"] = faith_request(q.question, ids, g["text"], model)
+            reqs[f"{run}__{q.id}__c"] = correct_request(q.question, q.gold_answer, g["text"], model)
+    tag = f"judge-{RUBRIC_VERSION}" + ("" if model == JUDGE_MODEL else f"-{model}")
+    return run_batch(reqs, tag, est_out=600, use_cache=True)
 
 
-def measure() -> None:
+def score_run(qs, run, gens, judged, ret) -> dict[str, dict]:
+    """Per-question records of one run: the answer, the two verdicts and the GAA pass."""
+    recs = {}
+    for q in qs:
+        g = gens[f"{run}__{q.id}"]
+        rec = {"id": q.id, "type": q.type, "answer": g["text"], "gen_ok": g["ok"], "gen_stop": g["stop"],
+               "abstained": g["ok"] and abstained(g["text"]), "faithful": None, "correct": None, "judge_error": False,
+               "retrieved": ret[run[:2]][q.id] if run != "R0" else []}
+        if rec["gen_ok"] and not rec["abstained"]:
+            fr = judged[f"{run}__{q.id}__f"] if run != "R0" else None
+            cr = judged[f"{run}__{q.id}__c"]
+            fv = parse_json(fr["text"]) if fr else {"faithful": False}  # R0: no passages, see judge_all
+            cv = parse_json(cr["text"])
+            rec["faithful"] = fv.get("faithful") if fv else None
+            rec["correct"] = cv.get("correct") if cv else None
+            rec["judge_error"] = not isinstance(rec["faithful"], bool) or not isinstance(rec["correct"], bool)
+            rec["judge_why"] = [(fv or {}).get("unsupported"), (cv or {}).get("why")]
+        rec["pass"] = score_question(q, rec)
+        recs[q.id] = rec
+    return recs
+
+
+def measure(runs: list[str] = RUNS_PLAN, gen_tag: str = "generate-v1", suffix: str = "") -> None:
+    """The ladder. With a suffix: a repeat of some runs (new generation batch), written next to the originals as
+    results/<run><suffix>.jsonl and added to summary.json; the judge cache serves only identical answers."""
     golden_hash = check_frozen()
     qs = load_golden()
     RESULTS.mkdir(exist_ok=True)
     ret = retrieve_all(qs)
     gen_reqs = {f"{run}__{q.id}": gen_request(q.question, ret[run[:2]][q.id][:TOP_K_GEN] if run != "R0" else [])
-                for run in RUNS_PLAN for q in qs}
-    gens = run_batch(gen_reqs, "generate-v1", est_out=200, use_cache=False)
-    judged = judge_all(qs, RUNS_PLAN, gens, ret)
+                for run in runs for q in qs}
+    gens = run_batch(gen_reqs, gen_tag, est_out=200, use_cache=False)
+    judged = judge_all(qs, runs, gens, ret)
     commit = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
-    summary = {"golden_sha256": golden_hash, "commit": commit, "gen_model": GEN_MODEL, "judge_model": JUDGE_MODEL,
-               "rubric": RUBRIC_VERSION, "top_k_gen": TOP_K_GEN, "runs": {}}
+    path = RESULTS / "summary.json"
+    summary = json.loads(path.read_text()) if suffix else {"golden_sha256": golden_hash, "commit": commit,
+        "gen_model": GEN_MODEL, "judge_model": JUDGE_MODEL, "rubric": RUBRIC_VERSION, "top_k_gen": TOP_K_GEN, "runs": {}}
+    if suffix:
+        summary.setdefault("repeats", {})[suffix] = {"runs": runs, "gen_tag": gen_tag, "commit": commit}
     answerable = [q for q in qs if q.type != "unanswerable"]
     summary["n_answerable"] = len(answerable)
-    for run in RUNS_PLAN:
-        recs = {}
-        for q in qs:
-            g = gens[f"{run}__{q.id}"]
-            rec = {"id": q.id, "type": q.type, "answer": g["text"], "gen_ok": g["ok"], "gen_stop": g["stop"],
-                   "abstained": g["ok"] and abstained(g["text"]), "faithful": None, "correct": None, "judge_error": False,
-                   "retrieved": ret[run[:2]][q.id] if run != "R0" else []}
-            if rec["gen_ok"] and not rec["abstained"]:
-                fr = judged[f"{run}__{q.id}__f"] if run != "R0" else None
-                cr = judged[f"{run}__{q.id}__c"]
-                fv = parse_json(fr["text"]) if fr else {"faithful": False}  # R0: no passages, see judge_all
-                cv = parse_json(cr["text"])
-                rec["faithful"] = fv.get("faithful") if fv else None
-                rec["correct"] = cv.get("correct") if cv else None
-                rec["judge_error"] = not isinstance(rec["faithful"], bool) or not isinstance(rec["correct"], bool)
-                rec["judge_why"] = [(fv or {}).get("unsupported"), (cv or {}).get("why")]
-            rec["pass"] = score_question(q, rec)
-            recs[q.id] = rec
-        (RESULTS / f"{run}.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in recs.values()),
-                                              encoding="utf-8", newline="\n")
+    for run in runs:
+        recs = score_run(qs, run, gens, judged, ret)
+        (RESULTS / f"{run}{suffix}.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in recs.values()),
+                                                      encoding="utf-8", newline="\n")
         m = generation_metrics(qs, recs)
         if run != "R0":
             m |= retrieval_metrics([ret[run[:2]][q.id] for q in answerable], [q.evidence for q in answerable])
         m["batches"] = sorted({gens[f"{run}__{q.id}"].get("batch", "") for q in qs} - {""})
-        summary["runs"][run] = m
-    summary["judge_batches"] = sorted({v.get("batch", "") for v in judged.values()} - {""})
-    (RESULTS / "summary.json").write_text(json.dumps(summary, indent=1), newline="\n")
+        summary["runs"][run + suffix] = m
+    summary["judge_batches"] = sorted(set(summary.get("judge_batches", [])) | {v.get("batch", "") for v in judged.values()} - {""})
+    path.write_text(json.dumps(summary, indent=1), newline="\n")
     calibration_sheet(qs, ret)
     report()
+
+
+# ---------------------------------------------------------------- judge sensitivity
+
+JUDGE_ALT = ["claude-sonnet-5-5", "claude-haiku-4-5-20251001"]
+
+
+def judge_sensitivity(models: list[str] = JUDGE_ALT) -> None:
+    """Re-judge the committed answers of R1a-R4 with other judge models (same rubric, same effort where the model
+    takes it), then: GAA per judge and rung, agreement with the Opus judge on the per-item verdicts (exact match
+    and Cohen's kappa), and whether the best rung changes. R0 answered nothing, so it is the same under any judge."""
+    qs = load_golden()
+    s = json.loads((RESULTS / "summary.json").read_text())
+    runs = [r for r in RUNS_PLAN if r != "R0"]
+    ret = retrieve_all(qs)
+    base = {run: {r["id"]: r for r in map(json.loads, (RESULTS / f"{run}.jsonl").read_text(encoding="utf-8").splitlines())}
+            for run in runs}
+    gens = {f"{run}__{qid}": {"ok": r["gen_ok"], "text": r["answer"], "stop": r["gen_stop"]}
+            for run, rs in base.items() for qid, r in rs.items()}
+    verdicts, metrics, batches = {JUDGE_MODEL: base}, {JUDGE_MODEL: {run: s["runs"][run] for run in runs}}, {}
+    for model in models:
+        judged = judge_all(qs, runs, gens, ret, model)
+        batches[model] = sorted({v.get("batch", "") for v in judged.values()} - {""})
+        verdicts[model] = {run: score_run(qs, run, gens, judged, ret) for run in runs}
+        metrics[model] = {run: generation_metrics(qs, verdicts[model][run]) for run in runs}
+    answered = [(run, qid) for run in runs for qid, r in base[run].items() if r["gen_ok"] and not r["abstained"]]
+    agree = {}
+    for model in models:
+        for kind in ("faithful", "correct", "pass"):
+            a = [verdicts[JUDGE_MODEL][run][qid][kind] is True for run, qid in answered]
+            b = [verdicts[model][run][qid][kind] is True for run, qid in answered]
+            agree[(model, kind)] = {"n": len(a), "match": sum(x == y for x, y in zip(a, b)) / len(a),
+                                    "kappa": cohen_kappa(a, b), "true_opus": sum(a) / len(a), "true_alt": sum(b) / len(a),
+                                    "only_opus": sum(x and not y for x, y in zip(a, b)), "only_alt": sum(y and not x for x, y in zip(a, b))}
+    rungs = {"R1": ("R1a", "R1b", "R1c"), "R2": ("R2",), "R3": ("R3",), "R4": ("R4",)}
+    gaa = {m: {r: sum(metrics[m][x]["GAA"] for x in xs) / len(xs) for r, xs in rungs.items()} for m in metrics}
+    order = {m: sorted(gaa[m], key=lambda r: -gaa[m][r]) for m in gaa}
+    short = lambda m: m.split("-")[1]
+    lines = [f"# Judge sensitivity (measured 2026-10-10)", "",
+             f"Same answers (results/R*.jsonl from the 2026-10-08 measurement), same rubric {RUBRIC_VERSION} and prompts, "
+             f"judged again by {', '.join(models)}. Effort `low` where the model takes it (Haiku 4.5 rejects the effort "
+             f"parameter); thinking left at each model's default (Opus and Sonnet adaptive, Haiku none). "
+             f"R0 answered nothing, so its GAA (0.150) is the same under any judge and is left out. "
+             f"Verdicts cached by request hash (model included) in cache/llm.jsonl.", "",
+             "## GAA per judge", "", "| run | " + " | ".join(short(m) for m in metrics) + " |", "|---|" + "---|" * len(metrics)]
+    for run in runs:
+        lines.append(f"| {run} | " + " | ".join(f"{metrics[m][run]['GAA']:.3f}" for m in metrics) + " |")
+    lines += ["", "Faithfulness / correctness over answered questions, and judge parse failures:", "",
+              "| run | " + " | ".join(short(m) for m in metrics) + " |", "|---|" + "---|" * len(metrics)]
+    for run in runs:
+        lines.append(f"| {run} | " + " | ".join(f"{metrics[m][run]['faithfulness']:.3f} / {metrics[m][run]['correctness']:.3f} "
+                                              f"({metrics[m][run]['judge_failures']} fail)" for m in metrics) + " |")
+    lines += ["", "## Agreement with the Opus judge", "",
+              f"Per-item verdicts on the {len(answered)} answered (run, question) pairs pooled over R1a-R4. A judge failure "
+              "counts as false, as in GAA. `true` = share of items the judge marks faithful / correct / passing; the last "
+              "two columns split the disagreements by direction. Kappa on faithfulness is dominated by the base rate "
+              "(Opus marks almost every answer faithful, so chance agreement is already high).", "",
+              "| judge | verdict | n | exact match | Cohen's kappa | true (Opus) | true (this judge) | Opus true, this false | this true, Opus false |",
+              "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for (model, kind), v in agree.items():
+        lines.append(f"| {short(model)} | {kind} | {v['n']} | {v['match']:.3f} | {v['kappa']:.3f} | {v['true_opus']:.3f} | "
+                     f"{v['true_alt']:.3f} | {v['only_opus']} | {v['only_alt']} |")
+    lines += ["", "## Ranking of the rungs (GAA, R1 = mean of the three runs)", "",
+              "| judge | order | best | R1 | R2 | R3 | R4 |", "|---|---|---|---:|---:|---:|---:|"]
+    for m in gaa:
+        lines.append(f"| {short(m)} | {' > '.join(order[m])} | {order[m][0]} | " + " | ".join(f"{gaa[m][r]:.3f}" for r in rungs) + " |")
+    lines += ["", f"Batches: " + "; ".join(f"{short(m)} {', '.join(b)}" for m, b in batches.items()) + ".",
+              "Spend per batch: runs/<batch>/usage.json (gitignored); the totals are in the README."]
+    (RESULTS / "judge_sensitivity.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    with (RESULTS / "judge_sensitivity.jsonl").open("w", encoding="utf-8", newline="\n") as f:
+        for run, qid in answered:
+            f.write(json.dumps({"run": run, "id": qid, "type": base[run][qid]["type"]} | {
+                short(m): {k: verdicts[m][run][qid][k] for k in ("faithful", "correct", "pass")} for m in verdicts}) + "\n")
+    print("\n".join(lines))
 
 
 def calibration_sheet(qs, ret) -> None:
@@ -265,11 +352,13 @@ def report() -> None:
           f"(judge not yet calibrated) · commit {s['commit']}")
     print("| run | " + " | ".join(cols) + " | GAA vs R1 mean |")
     print("|" + "---|" * (len(cols) + 2))
-    for r in RUNS_PLAN:
+    for r in [k for p in RUNS_PLAN for k in [p] + sorted(x for x in runs if x.startswith(p + "-"))]:  # repeats after their original
         m = runs[r]
         cells = [("-" if c not in m else f"{m[c]:.3f}" if isinstance(m[c], float) else str(m[c])) for c in cols]
         d = m["GAA"] - r1["GAA"]
         tag = "" if r.startswith("R1") else f"{d:+.3f}" + (" (within noise)" if abs(d) <= noise["GAA"] else "")
+        if "-" in r:
+            tag += f"; vs {r.split('-')[0]} {m['GAA'] - runs[r.split('-')[0]]['GAA']:+.3f}"
         print(f"| {r} | " + " | ".join(cells) + f" | {tag} |")
     print("R1 noise (max-min over 3 runs):", {k: round(v, 3) for k, v in noise.items()})
     print("generation batches:", sorted({b for m in runs.values() for b in m["batches"]}), "judge batches:", s["judge_batches"])

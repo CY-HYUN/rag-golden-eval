@@ -134,11 +134,60 @@
    "batches": [
     "msgbatch_01JWp1o3ySwk7ZcnsnTvLFoT"
    ]
+  },
+  "R3-rep": {
+   "N": 140,
+   "answered": 95,
+   "faithfulness": 0.9789473684210527,
+   "correctness": 0.8526315789473684,
+   "correct_any_grounding": 0.680672268907563,
+   "abstention_acc": 1.0,
+   "false_abstention": 0.20168067226890757,
+   "GAA": 0.7142857142857143,
+   "gen_failures": 0,
+   "judge_failures": 0,
+   "recall@5": 0.7310924369747899,
+   "recall@10": 0.9159663865546218,
+   "mrr@10": 0.4986361211151129,
+   "ndcg@10": 0.5196243463874053,
+   "batches": [
+    "msgbatch_01RuoVYeoxwMn7Zfn335idkX"
+   ]
+  },
+  "R4-rep": {
+   "N": 140,
+   "answered": 82,
+   "faithfulness": 0.9634146341463414,
+   "correctness": 0.7926829268292683,
+   "correct_any_grounding": 0.5462184873949579,
+   "abstention_acc": 1.0,
+   "false_abstention": 0.31092436974789917,
+   "GAA": 0.5928571428571429,
+   "gen_failures": 0,
+   "judge_failures": 0,
+   "recall@5": 0.5882352941176471,
+   "recall@10": 0.8067226890756303,
+   "mrr@10": 0.41918100573562767,
+   "ndcg@10": 0.44211515438573157,
+   "batches": [
+    "msgbatch_01RuoVYeoxwMn7Zfn335idkX"
+   ]
   }
  },
  "n_answerable": 119,
  "judge_batches": [
   "msgbatch_015HoLTb1psKA8DbSAtHFpEi",
+  "msgbatch_016YEaHynHFUVjJodYwEkqhF",
   "msgbatch_01BgYEvXrgK5aZLk4YC2DX79"
- ]
+ ],
+ "repeats": {
+  "-rep": {
+   "runs": [
+    "R3",
+    "R4"
+   ],
+   "gen_tag": "generate-v1-rep",
+   "commit": "12dc497"
+  }
+ }
 }
