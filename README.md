@@ -77,6 +77,8 @@ uv run python -m rge golden        # draft and machine-check the golden set (cac
 uv run python -m rge measure       # the ladder through generation and the judge
 uv run python -m rge repeat        # R3 and R4 once more in a new generation batch: the repeat rows
 uv run python -m rge judge-sensitivity [model ...]   # re-judge R1a-R4 with other judges: results/judge_sensitivity.md
+uv run python review/blind_sheet.py make    # review/human_label_blind.csv: the 30 items without the judge's verdicts
+uv run python review/blind_sheet.py merge   # copy the person's 1/0 labels back into review/judge_calibration.csv
 uv run python -m rge calibrate     # judge vs human agreement, once review/judge_calibration.csv is labelled
 ```
 
