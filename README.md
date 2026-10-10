@@ -130,7 +130,8 @@ sheet can.
 
 **Second LLM pass on the calibration sheet** (`review/assistant_check.csv`, 2026-10-10). Not a human check: Claude
 Opus 5.5 in an interactive session read the 30 items of `review/judge_calibration.csv` against the rubric, with the
-judge columns hidden. Correctness matched the judge on 30 of 30 (7 marked incorrect by both). Faithfulness matched on
+per-item judge columns hidden (the judge's totals, 28 faithful and 23 correct of 30, had been printed before).
+Correctness is judged against the same LLM-drafted gold answers the judge used. Correctness matched the judge on 30 of 30 (7 marked incorrect by both). Faithfulness matched on
 28 of 30 at first; the two disagreements (items 23 and 27, both "NPE (Neural Posterior Estimation)") were changed to
 unfaithful after reading the judge's reason, because the passages give only the acronyms. Same model family as the
 judge, and two labels set after seeing its verdict, so this is a consistency check, not a calibration.
