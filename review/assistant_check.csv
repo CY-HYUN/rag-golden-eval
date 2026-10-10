@@ -1,0 +1,31 @@
+﻿item,run,qid,assistant_faithful,assistant_correct,note
+1,R3,g059,1,1,
+2,R1b,g131,1,1,
+3,R2,g128,1,0,GOLD lists 5 steps; answer omits the state encoder and that the Q-function is IQL-trained (neither is in the shown passages)
+4,R3,g096,1,1,
+5,R2,g101,1,1,
+6,R3,g134,1,1,Evaluator given only as 'likely the Evaluator'; counted as stated
+7,R4,g139,1,1,
+8,R1a,g036,1,1,
+9,R4,g005,1,1,
+10,R4,g057,1,0,WFD dataset missing (not in the shown passages)
+11,R3,g032,1,1,
+12,R1a,g087,1,1,
+13,R1c,g103,1,1,
+14,R1c,g059,1,1,
+15,R2,g032,1,1,
+16,R4,g104,1,1,
+17,R1b,g079,1,0,0.92% margin missing; the passage cuts off before it
+18,R1a,g078,1,0,centered difference quotients missing (not in the shown passages)
+19,R1c,g046,1,1,
+20,R1b,g006,1,0,declines (NOT_IN_CONTEXT)
+21,R1b,g097,1,1,
+22,R2,g061,1,0,does not name ALS or the evaluation-only reason (passages cut off)
+23,R1a,g133,0,1,"faithful changed 1->0 after seeing the judge's reason: the passages give only the acronyms NPE/FMPE, not their expansions"
+24,R1c,g127,1,1,
+25,R3,g062,1,1,
+26,R1b,g128,1,1,same question as item 3 with different passages (Figure 2 text retrieved); all steps given
+27,R2,g133,0,1,"faithful changed 1->0 after seeing the judge's reason: the passages give only the acronyms NPE/FMPE, not their expansions"
+28,R3,g091,1,1,
+29,R2,g093,1,1,
+30,R3,g129,1,0,direct logit attribution missing

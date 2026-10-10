@@ -128,6 +128,13 @@ count as failures. Kappa on faithfulness is low for both (0.22, -0.03) because O
 so there is little left to agree on beyond the base rate. None of this says which judge is right; only the human
 sheet can.
 
+**Second LLM pass on the calibration sheet** (`review/assistant_check.csv`, 2026-10-10). Not a human check: Claude
+Opus 5.5 in an interactive session read the 30 items of `review/judge_calibration.csv` against the rubric, with the
+judge columns hidden. Correctness matched the judge on 30 of 30 (7 marked incorrect by both). Faithfulness matched on
+28 of 30 at first; the two disagreements (items 23 and 27, both "NPE (Neural Posterior Estimation)") were changed to
+unfaithful after reading the judge's reason, because the passages give only the acronyms. Same model family as the
+judge, and two labels set after seeing its verdict, so this is a consistency check, not a calibration.
+
 **Headline.** Best GAA is BM25 at 0.721 (mean of three runs, N = 140, frozen golden set, judge not calibrated).
 Hybrid ties it (0.721, within noise). Dense alone is 0.043 below, and adding the cross-encoder reranker is 0.129
 below, with recall@5 falling from 0.731 to 0.588. H1 (hybrid + rerank beats BM25) is not supported on this set.
@@ -168,7 +175,8 @@ repeat $2.68: generation $1.05, judge $1.63), from each batch's `usage` fields.
 
 - The judge is not calibrated. Every judge-derived number carries "judge not yet calibrated" until
   `review/judge_calibration.csv` (30 items, stratified by rung and question type) is labelled and
-  `rge calibrate` shows kappa >= 0.6 (design threshold).
+  `rge calibrate` shows kappa >= 0.6 (design threshold). A second LLM pass agrees with it (see "Second LLM pass"
+  above), which rules out sloppy judging but not a bias shared by the model family.
 - The golden set has not been read by a person. Machine checks catch quotes that do not exist and gold answers that
   the cited passages do not support; they do not catch a question that is ambiguous, trivial or badly typed.
 - Unanswerable questions were vetted with BM25 and dense passages, so they are by construction ones those two
