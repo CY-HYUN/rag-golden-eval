@@ -188,9 +188,15 @@ repeat $2.68: generation $1.05, judge $1.63), from each batch's `usage` fields.
 
 ## Next steps
 
-1. CY labels `review/human_check.csv` and `review/judge_calibration.csv`; then `rge calibrate`, and a golden_set_v2 if
-   any question is dropped (v1 and v2 numbers never share a table).
+1. A person labels `review/human_check.csv` and `review/judge_calibration.csv`; then `rge calibrate`, and a
+   golden_set_v2 if any question is dropped (v1 and v2 numbers never share a table).
 2. Dev-slice questions (about 30) to tune k, fusion depth and the prompt, without touching the golden set.
 3. Docker Compose (Qdrant, FastAPI `/ask` + `/health`, harness profile), then a CI regression gate whose thresholds
    come from the measured noise floor.
 4. A judge from another model family.
+
+## License
+
+Code: MIT (`LICENSE`). `data/corpus.jsonl.gz` holds text extracted from 150 arXiv papers, each under CC BY 4.0 and
+kept with its own arXiv id, title, authors and license URL; the text was extracted from the PDF and cut at 10,000
+words. The golden set and results quote short passages from those papers.
