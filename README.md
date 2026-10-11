@@ -95,8 +95,9 @@ were added 2026-10-10 (`rge repeat`: the same R3 and R4 requests in a new genera
 `msgbatch_01RuoVYeoxwMn7Zfn335idkX`, judged in `msgbatch_016YEaHynHFUVjJodYwEkqhF`; 14 of the 354 judge requests
 were answers identical to the first run and came from the cache): `results/R3-rep.jsonl`, `results/R4-rep.jsonl`.
 
-**Judge not yet calibrated**: faithfulness, correctness and GAA below come from `claude-opus-5-5` with rubric v1 and
-no human agreement check yet. Two cheaper judges re-scored the same answers on 2026-10-10 (`rge judge-sensitivity`,
+**Judge partly calibrated**: faithfulness, correctness and GAA below come from `claude-opus-5-5` with rubric v1.
+Its correctness verdicts were checked against one person on 30 items (29 of 30 agree, kappa 0.91, see "Human check"
+below); its faithfulness verdicts have no human check yet, so GAA, which needs both, is not fully calibrated. Two cheaper judges re-scored the same answers on 2026-10-10 (`rge judge-sensitivity`,
 `results/judge_sensitivity.md`); the ranking held, see "Judge sensitivity" below.
 
 | run | recall@5 | recall@10 | MRR@10 | nDCG@10 | faithfulness | correctness | abstention acc. | false abstention | GAA | GAA vs R1 mean |
@@ -138,7 +139,16 @@ Correctness is judged against the same LLM-drafted gold answers the judge used. 
 unfaithful after reading the judge's reason, because the passages give only the acronyms. Same model family as the
 judge, and two labels set after seeing its verdict, so this is a consistency check, not a calibration.
 
-**Headline.** Best GAA is BM25 at 0.721 (mean of three runs, N = 140, frozen golden set, judge not calibrated).
+**Human check, correctness only** (`review/judge_calibration.csv`, 2026-10-11). One person (the author) labelled
+correctness for the 30 items from the question, the gold answer and the model's answer, on a blind copy with the
+judge's verdicts left out (`review/blind_sheet.py`); faithfulness was not labelled. `rge calibrate`: correctness
+n = 30, agreement 96.7% (29 of 30), Cohen's kappa 0.91, above the 0.6 design threshold. By type: factoid 6/6,
+list 8/9, multi-hop 7/7, negation 8/8. The one disagreement, item 6 (list), is an answer that names three of four
+layers and calls the fourth "likely the Evaluator ... not explicitly stated": the judge passed it, the person did
+not. The second LLM pass above also passed it, so the leniency on hedged list answers is shared by the model family,
+which is the kind of bias only a person catches. One labeller, so no inter-rater agreement.
+
+**Headline.** Best GAA is BM25 at 0.721 (mean of three runs, N = 140, frozen golden set; judge correctness checked by one person on 30 items, faithfulness not).
 Hybrid ties it (0.721, within noise). Dense alone is 0.043 below, and adding the cross-encoder reranker is 0.129
 below, with recall@5 falling from 0.731 to 0.588. H1 (hybrid + rerank beats BM25) is not supported on this set.
 
@@ -176,10 +186,9 @@ repeat $2.68: generation $1.05, judge $1.63), from each batch's `usage` fields.
 
 ## Limits
 
-- The judge is not calibrated. Every judge-derived number carries "judge not yet calibrated" until
-  `review/judge_calibration.csv` (30 items, stratified by rung and question type) is labelled and
-  `rge calibrate` shows kappa >= 0.6 (design threshold). A second LLM pass agrees with it (see "Second LLM pass"
-  above), which rules out sloppy judging but not a bias shared by the model family.
+- The judge is only partly calibrated. Correctness: one person, 30 items, kappa 0.91 (2026-10-11), with one
+  disagreement on a hedged list answer. Faithfulness: no human labels, so every faithfulness and GAA number still
+  rests on the judge. One labeller, 30 items: no inter-rater agreement and a wide margin on the kappa.
 - The golden set has not been read by a person. Machine checks catch quotes that do not exist and gold answers that
   the cited passages do not support; they do not catch a question that is ambiguous, trivial or badly typed.
 - Unanswerable questions were vetted with BM25 and dense passages, so they are by construction ones those two
@@ -190,7 +199,8 @@ repeat $2.68: generation $1.05, judge $1.63), from each batch's `usage` fields.
 
 ## Next steps
 
-1. A person labels `review/human_check.csv` and `review/judge_calibration.csv`; then `rge calibrate`, and a
+1. A person labels faithfulness in `review/judge_calibration.csv` and the golden-set check `review/human_check.csv`
+   (correctness was labelled 2026-10-11); then `rge calibrate`, and a
    golden_set_v2 if any question is dropped (v1 and v2 numbers never share a table).
 2. Dev-slice questions (about 30) to tune k, fusion depth and the prompt, without touching the golden set.
 3. Docker Compose (Qdrant, FastAPI `/ask` + `/health`, harness profile), then a CI regression gate whose thresholds
