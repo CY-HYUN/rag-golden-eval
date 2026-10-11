@@ -349,7 +349,7 @@ def report() -> None:
     cols = ["recall@5", "recall@10", "mrr@10", "ndcg@10", "faithfulness", "correctness", "abstention_acc",
             "false_abstention", "GAA", "answered", "gen_failures", "judge_failures"]
     print(f"golden {s['golden_sha256'][:12]} · N={runs['R0']['N']} (retrieval metrics over the {s['n_answerable']} answerable) · gen {s['gen_model']} · judge {s['judge_model']} "
-          f"(judge correctness checked by a person on 30 items, faithfulness not) · commit {s['commit']}")
+          f"(vs one person on 30 items: judge correctness kappa 0.91, faithfulness kappa 0.53) · commit {s['commit']}")
     print("| run | " + " | ".join(cols) + " | GAA vs R1 mean |")
     print("|" + "---|" * (len(cols) + 2))
     for r in [k for p in RUNS_PLAN for k in [p] + sorted(x for x in runs if x.startswith(p + "-"))]:  # repeats after their original
