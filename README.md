@@ -154,6 +154,17 @@ relabelled unfaithful by the person by the rubric's letter (an expansion the pas
 claim); with the first labels agreement was 25 of 30, kappa -0.09. Both raters call about 90% of answers faithful,
 so kappa swings on one or two items. One labeller, so no inter-rater agreement.
 
+**Faithfulness rubric v2** (`results/faithfulness_v2.md`, 2026-10-11, `rge rejudge-faith`). One change: the faithfulness
+system prompt now says to check each named item, number and qualifier on its own, that a hedged guess is still a claim,
+that a statement about what the passages say must be true of them, and that expanding an acronym is a claim. Same
+answers, passages, judge, effort and correctness verdicts as v1. On the 560 answered R1a-R4 pairs, 14 verdicts flipped
+from faithful to unfaithful and none the other way; 3 v2 replies did not parse and count as not faithful, as judge
+failures do in v1. Noise floor: the v1 requests sent again with the cache off flipped 3 of 560, all to unfaithful,
+with no parse failures (`rge judge-noise-faith`). GAA moves by 0.000 to 0.022 per run and the order of the rungs holds.
+Against the person, v2 agrees on 28 of 30 (kappa 0.71, above 0.6), but v2 was written after seeing that sheet's three
+lenient misses, so this is in-sample, not a held-out test. The headline numbers stay on v1; v2 needs fresh labels on
+items it was not written from before it replaces them. Spend: $4.49 for v2, $4.28 for the noise run.
+
 **Headline.** Best GAA is BM25 at 0.721 (mean of three runs, N = 140, frozen golden set; against one person on 30 items the judge's correctness passes, kappa 0.91,
 and its faithfulness falls short, kappa 0.53, leaning lenient).
 Hybrid ties it (0.721, within noise). Dense alone is 0.043 below, and adding the cross-encoder reranker is 0.129
@@ -194,8 +205,9 @@ repeat $2.68: generation $1.05, judge $1.63), from each batch's `usage` fields.
 ## Limits
 
 - The judge is only partly calibrated. Correctness: one person, 30 items, kappa 0.91 (2026-10-11), one disagreement on
-  a hedged list answer. Faithfulness: 27 of 30, kappa 0.53, below the 0.6 threshold, all three misses lenient, so the
-  faithfulness column and GAA likely overstate. One labeller, 30 items: no inter-rater agreement and a wide margin.
+  a hedged list answer. Faithfulness (v1, the headline): 27 of 30, kappa 0.53, below the 0.6 threshold, all three misses
+  lenient, so the faithfulness column and GAA likely overstate. Rubric v2 reaches kappa 0.71 on the same 30, in-sample.
+  One labeller, 30 items: no inter-rater agreement and a wide margin.
 - The golden set has not been read by a person. Machine checks catch quotes that do not exist and gold answers that
   the cited passages do not support; they do not catch a question that is ambiguous, trivial or badly typed.
 - Unanswerable questions were vetted with BM25 and dense passages, so they are by construction ones those two
@@ -206,8 +218,8 @@ repeat $2.68: generation $1.05, judge $1.63), from each batch's `usage` fields.
 
 ## Next steps
 
-1. Tighten the faithfulness rubric on the three lenient misses (hedged lists, partial component lists), re-judge, and
-   re-run `rge calibrate`; a person labels the golden-set check `review/human_check.csv`, and a
+1. Label a fresh sample the v2 rubric was not written from, to test v2 out of sample before it replaces v1; a person
+   labels the golden-set check `review/human_check.csv`, and a
    golden_set_v2 if any question is dropped (v1 and v2 numbers never share a table).
 2. Dev-slice questions (about 30) to tune k, fusion depth and the prompt, without touching the golden set.
 3. Docker Compose (Qdrant, FastAPI `/ask` + `/health`, harness profile), then a CI regression gate whose thresholds

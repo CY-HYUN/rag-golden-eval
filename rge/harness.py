@@ -25,6 +25,18 @@ FAITH_SYSTEM = (
     "matter. Example: passages say 'trained on 8 GPUs for 3 days'; answer 'trained on 8 A100 GPUs' is unfaithful "
     "(A100 is not stated). Reply with one JSON object only: "
     '{"faithful": true or false, "unsupported": "the first unsupported claim, or empty"}')
+# Rubric v2, faithfulness only (2026-10-11). Written after a person's labels showed the v1 judge passing three answers
+# the person failed (hedged list, partial answer, component list), so agreement on those same 30 items is in-sample.
+FAITH_SYSTEM_V2 = (
+    "You check whether an answer is supported by the context passages it was written from. Faithful means every "
+    "factual claim in the answer is stated in, or follows directly from, the passages. Check each named item, number, "
+    "method, component and qualifier on its own: if any one of them is not in the passages, the answer is unfaithful. "
+    "A hedged guess ('likely', 'probably', 'may be') about something the passages do not state is still a claim. "
+    "A statement about what the passages do or do not say must itself be true of the passages. Expanding an acronym "
+    "the passages do not expand is a claim. Citation markers such as [2] and wording differences do not matter. "
+    "Example: passages say 'trained on 8 GPUs for 3 days'; answer 'trained on 8 A100 GPUs' is unfaithful (A100 is not "
+    "stated). Reply with one JSON object only: "
+    '{"faithful": true or false, "unsupported": "the first unsupported claim, or empty"}')
 CORRECT_SYSTEM = (
     "You compare a candidate answer with a reference answer to the same question. Correct means the candidate states "
     "the reference's key facts and contradicts none of them; extra detail is fine unless it contradicts. If the "
@@ -50,8 +62,8 @@ def gen_request(question: str, ids: list[int]) -> dict:
     return params(GEN_MODEL, GEN_SYSTEM, f"{passages(ids)}\n\nQuestion: {question}", 1024, "high") | {"thinking": {"type": "between_tools"}}
 
 
-def faith_request(question: str, ids: list[int], answer: str, model: str = JUDGE_MODEL) -> dict:
-    return params(model, FAITH_SYSTEM, f"{passages(ids)}\n\nQuestion: {question}\n\nAnswer: {answer}", 3000, "low")
+def faith_request(question: str, ids: list[int], answer: str, model: str = JUDGE_MODEL, system: str = FAITH_SYSTEM) -> dict:
+    return params(model, system, f"{passages(ids)}\n\nQuestion: {question}\n\nAnswer: {answer}", 3000, "low")
 
 
 def correct_request(question: str, gold: str, answer: str, model: str = JUDGE_MODEL) -> dict:
@@ -291,6 +303,88 @@ def judge_sensitivity(models: list[str] = JUDGE_ALT) -> None:
             f.write(json.dumps({"run": run, "id": qid, "type": base[run][qid]["type"]} | {
                 short(m): {k: verdicts[m][run][qid][k] for k in ("faithful", "correct", "pass")} for m in verdicts}) + "\n")
     print("\n".join(lines))
+
+
+def rejudge_faith() -> None:
+    """Rubric v2 for faithfulness only: the committed R1a-R4 answers and passages, the same judge model and effort, a new
+    system prompt. Correctness stays v1. Writes results/faithfulness_v2.md and .jsonl; v1 results are not touched."""
+    qs = {q.id: q for q in load_golden()}
+    runs = [r for r in RUNS_PLAN if r != "R0"]
+    ret = retrieve_all(list(qs.values()))
+    base = {run: {r["id"]: r for r in map(json.loads, (RESULTS / f"{run}.jsonl").read_text(encoding="utf-8").splitlines())}
+            for run in runs}
+    reqs = {}
+    for run in runs:
+        for qid, r in base[run].items():
+            if r["gen_ok"] and not r["abstained"]:
+                ids = ret[run[:2]][qid][:TOP_K_GEN]
+                reqs[f"{run}__{qid}__f"] = faith_request(qs[qid].question, ids, r["answer"], system=FAITH_SYSTEM_V2)
+    k0 = next(iter(reqs))
+    run0, qid0, _ = k0.split("__")
+    v1_req = faith_request(qs[qid0].question, ret[run0[:2]][qid0][:TOP_K_GEN], base[run0][qid0]["answer"])
+    assert reqs[k0] != v1_req and json.dumps(reqs[k0]).count("hedged guess") == 1, "rubric v2 did not reach the request"
+    judged = run_batch(reqs, "judge-faith-v2", est_out=600, use_cache=True)
+    rows, per_run = [], {}
+    for run in runs:
+        recs = {}
+        for qid, r in base[run].items():
+            rec = dict(r)
+            if r["gen_ok"] and not r["abstained"]:
+                v = parse_json(judged[f"{run}__{qid}__f"]["text"]) or {}
+                rec["faithful"] = v.get("faithful") if isinstance(v.get("faithful"), bool) else None
+                rows.append({"run": run, "id": qid, "type": r["type"], "v1": r["faithful"], "v2": rec["faithful"],
+                             "unsupported_v2": v.get("unsupported", "")})
+            rec["pass"] = score_question(qs[qid], rec)
+            recs[qid] = rec
+        per_run[run] = (generation_metrics(list(qs.values()), {k: base[run][k] for k in base[run]}),
+                        generation_metrics(list(qs.values()), recs))
+    a = [x["v1"] is True for x in rows]
+    b = [x["v2"] is True for x in rows]
+    real = [x for x in rows if x["v2"] is not None]  # a parse failure is not a verdict: kept out of the flip counts
+    sheet = list(csv.DictReader((REVIEW / "judge_calibration.csv").open(encoding="utf-8-sig")))
+    v2 = {(x["run"], x["id"]): x["v2"] for x in rows}
+    cal = [(s["judge_faithful"] == "1", v2.get((s["run"], s["qid"])) is True, s["human_faithful (1/0)"].strip() == "1")
+           for s in sheet if s["human_faithful (1/0)"].strip() in ("0", "1") and (s["run"], s["qid"]) in v2]
+    h = [c[2] for c in cal]
+    lines = ["# Faithfulness rubric v2 (measured 2026-10-11)", "",
+             f"Same committed answers, passages, judge ({JUDGE_MODEL}, effort low) and correctness verdicts (v1); only the "
+             "faithfulness system prompt changed (rubric v2 in rge/harness.py). v2 was written after the person's labels on "
+             "the 30-item sheet showed three lenient misses, so agreement on those 30 is in-sample, not a held-out test.", "",
+             "| run | faithfulness v1 | faithfulness v2 | GAA v1 | GAA v2 |", "|---|---:|---:|---:|---:|"]
+    for run, (m1, m2) in per_run.items():
+        lines.append(f"| {run} | {m1['faithfulness']:.3f} | {m2['faithfulness']:.3f} | {m1['GAA']:.3f} | {m2['GAA']:.3f} |")
+    lines += ["", f"Per item, v1 vs v2 on {len(rows)} answered (run, question) pairs: match {sum(x == y for x, y in zip(a, b)) / len(a):.3f}, "
+              f"v1 faithful {sum(a)}, v2 faithful {sum(b)}, flipped to unfaithful {sum(x['v1'] is True and x['v2'] is False for x in real)}, "
+              f"flipped to faithful {sum(x['v1'] is not True and x['v2'] is True for x in real)}; v2 parse failures "
+              f"{len(rows) - len(real)} (counted as not faithful in the GAA columns, as judge failures are in v1).",
+              "", f"Against the person on the calibration sheet (n = {len(cal)}, in-sample for v2): "
+              f"v1 agreement {sum(c[0] == c[2] for c in cal)}/{len(cal)}, kappa {cohen_kappa([c[0] for c in cal], h):.2f}; "
+              f"v2 agreement {sum(c[1] == c[2] for c in cal)}/{len(cal)}, kappa {cohen_kappa([c[1] for c in cal], h):.2f} (accept at >= 0.6).",
+              "", "Spend: runs/<batch>/usage.json for the judge-faith-v2 batch (gitignored); total in the README."]
+    (RESULTS / "faithfulness_v2.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    with (RESULTS / "faithfulness_v2.jsonl").open("w", encoding="utf-8", newline="\n") as f:
+        f.writelines(json.dumps(x, ensure_ascii=False) + "\n" for x in rows)
+    print("\n".join(lines))
+
+
+def judge_noise_faith() -> None:
+    """Noise floor for the v1 -> v2 comparison: the same v1 faithfulness requests sent again with the cache off, so
+    any flip is the judge's own run-to-run variation. Appends to results/faithfulness_v2.md."""
+    qs = {q.id: q for q in load_golden()}
+    runs = [r for r in RUNS_PLAN if r != "R0"]
+    ret = retrieve_all(list(qs.values()))
+    base = {run: {r["id"]: r for r in map(json.loads, (RESULTS / f"{run}.jsonl").read_text(encoding="utf-8").splitlines())}
+            for run in runs}
+    reqs = {f"{run}__{qid}__f": faith_request(qs[qid].question, ret[run[:2]][qid][:TOP_K_GEN], r["answer"])
+            for run in runs for qid, r in base[run].items() if r["gen_ok"] and not r["abstained"]}
+    judged = run_batch(reqs, "judge-faith-v1-rep", est_out=600, use_cache=False)
+    pairs = [(base[k.split("__")[0]][k.split("__")[1]]["faithful"] is True,
+              (parse_json(v["text"]) or {}).get("faithful") is True) for k, v in judged.items()]
+    line = (f"Noise floor (v1 judged again, cache off, {len(pairs)} pairs): match {sum(a == b for a, b in pairs) / len(pairs):.3f}, "
+            f"flipped to unfaithful {sum(a and not b for a, b in pairs)}, flipped to faithful {sum(b and not a for a, b in pairs)}.")
+    with (RESULTS / "faithfulness_v2.md").open("a", encoding="utf-8", newline="\n") as f:
+        f.write("\n" + line + "\n")
+    print(line)
 
 
 def calibration_sheet(qs, ret) -> None:

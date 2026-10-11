@@ -6,6 +6,8 @@
     measure     run the ladder (R0-R4, R1 three times) through generation and the judge
     repeat      generate R3 and R4 once more (new batch) and judge them; rows R3-rep, R4-rep next to the originals
     judge-sensitivity [model ...]  re-judge R1a-R4 with other judge models; results/judge_sensitivity.md
+    rejudge-faith  re-judge faithfulness of R1a-R4 with rubric v2 (correctness stays v1); results/faithfulness_v2.md
+    judge-noise-faith  the v1 faithfulness requests again with the cache off: the judge's own flip rate
     report      print the results table from results/ (no API calls)
     calibrate   agreement and Cohen's kappa of the judge against review/judge_calibration.csv
     selftest    metric functions on hand-computed examples
@@ -33,6 +35,12 @@ def main() -> int:
     elif cmd == "judge-sensitivity":
         from .harness import JUDGE_ALT, judge_sensitivity
         judge_sensitivity(sys.argv[2:] or JUDGE_ALT)
+    elif cmd == "rejudge-faith":
+        from .harness import rejudge_faith
+        rejudge_faith()
+    elif cmd == "judge-noise-faith":
+        from .harness import judge_noise_faith
+        judge_noise_faith()
     elif cmd == "report":
         from .harness import report
         report()
